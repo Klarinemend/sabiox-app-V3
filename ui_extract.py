@@ -4,7 +4,6 @@ import streamlit as st
 from prompts_sabiox import SYSTEM_EXTRACT_JSON
 from gemini_client import gemini_extract_json
 from sabiox_schema import sanitize_requirements, validate_requirements
-from utils_map import map_fr_to_cq
 from hybrid_extractor import extract_requirements_rule_based, should_use_ai_fallback
 
 # --------------------------------------------------
