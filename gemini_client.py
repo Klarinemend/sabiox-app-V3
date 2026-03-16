@@ -1,3 +1,6 @@
+# gemini_client.py - Cliente pra interagir com o Gemini
+# Cuida de todas as chamadas pro Gemini, cache, fallbacks e configurações.
+
 from __future__ import annotations
 
 import json
@@ -16,11 +19,10 @@ from google.genai import types
 
 
 
-# ----------------------------
-# Secrets/env helpers
-# ----------------------------
+# Helpers para secrets e env
 
 def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Pega segredo do Streamlit ou env, com fallback."""
     if hasattr(st, "secrets") and name in st.secrets:
         v = st.secrets.get(name)
         if v is None:
@@ -29,10 +31,11 @@ def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
     return os.getenv(name, default)
 
 def _split_csv(val) -> List[str]:
+    """Converte string CSV ou lista em lista de strings limpas."""
     if not val:
         return []
 
-    # Lista TOML 
+    # Se for lista do TOML
     if isinstance(val, (list, tuple)):
         return [str(x).strip() for x in val if str(x).strip()]
 
@@ -41,6 +44,7 @@ def _split_csv(val) -> List[str]:
     return [p for p in parts if p]
 
 def get_gemini_keys() -> List[str]:
+    """Pega as chaves da API do Gemini das configurações."""
     raw = _get_secret("GEMINI_API_KEYS", [])
     keys = _split_csv(raw)
     
@@ -51,7 +55,8 @@ def get_gemini_keys() -> List[str]:
     return keys
 
 def get_models(mode: str) -> List[str]:
-    # mode: chat | report | extract | summary
+    """Pega os modelos Gemini pra um modo específico (chat, report, etc.)."""
+    # mode: chat, report, extract ou summary
     env_map = {
         "chat": "GEMINI_CHAT_MODELS",
         "report": "GEMINI_REPORT_MODELS",
@@ -188,6 +193,8 @@ def _generate_once(model_name: str, spec: CallSpec, api_key: str) -> str:
 
 def _generate_with_fallback(mode: str, system_prompt: str, user_text: str,
                             temperature: float = 0.2, top_p: float = 0.95) -> str:
+    """Gera resposta com Gemini, tentando várias chaves e modelos se der erro."""
+    keys = get_gemini_keys()
     keys = get_gemini_keys()
     if not keys:
         raise RuntimeError("Nenhuma chave Gemini configurada. Defina GEMINI_API_KEYS (ou GEMINI_API_KEY).")
@@ -219,10 +226,10 @@ def _generate_with_fallback(mode: str, system_prompt: str, user_text: str,
         for mi in range(len(models)):
             all_combinations.append((ki, models[mi]))
     
-    # Embaralha para distribuir a carga entre as chaves
+    # Embaralhando pra distribuir a carga entre as chaves
     random.shuffle(all_combinations)
 
-    # Tenta cada uma delas (com um limite de segurança)
+    # Tentando cada combinação, com limite de segurança
     max_tries = min(6, len(all_combinations))
     attempts = all_combinations[:max_tries]
 
@@ -230,7 +237,7 @@ def _generate_with_fallback(mode: str, system_prompt: str, user_text: str,
     for idx, (ki, model_name) in enumerate(attempts, start=1):
         try:
             enforce_cooldown()
-            # Tenta gerar com a combinação sorteada
+            # Tentando gerar com essa combinação
             return _generate_once(model_name, spec, api_key=keys[ki])
         except Exception as e:
             last_err = e
@@ -245,7 +252,7 @@ def _generate_with_fallback(mode: str, system_prompt: str, user_text: str,
 def compact_history(messages: List[Dict[str, str]],
                     summary: str = "",
                     keep_last: int = 8) -> str:
-    """Build compact text context: summary + last N turns."""
+    """Monta um contexto compacto: resumo + últimas N mensagens."""
     tail = messages[-keep_last:] if keep_last > 0 else messages
     lines = []
     if summary.strip():
@@ -284,7 +291,7 @@ def maybe_update_summary(messages: List[Dict[str, str]],
     # 1. Primeiro, prepara o texto (Resumo anterior + as últimas 50 mensagens)
     context_to_summarize = compact_history(messages, summary=summary, keep_last=50) 
 
-    # 2. Agora, monta o prompt com a instrução de resumo
+    # Atualize o resumo da conversa em até 12 bullets curtos.
     prompt = (
         "Atualize o resumo da conversa abaixo em no máximo 12 bullets curtos. "
         "Preserve decisões de negócio e fatos técnicos. "
@@ -321,19 +328,38 @@ def gemini_chat(messages: List[Dict[str, str]],
     return _cached_generate(cache_key, payload).strip()
 
 def gemini_report(messages: List[Dict[str, str]],
-                  system_prompt: str,
+                  prompt_architect: str,
+                  prompt_formatter: str,
                   summary: str = "",
                   keep_last: int = 14) -> str:
+    """Gera relatório SABiOx em 2 etapas: arquiteto e formatador."""
+    # 1. Recupera o histórico da conversa limpo
     context = compact_history(messages, summary=summary, keep_last=keep_last)
-    payload = {
+
+    # 2. Etapa A: Estruturação lógica (Arquiteto)
+    payload_architect = {
         "mode": "report",
-        "system_prompt": system_prompt,
+        "system_prompt": prompt_architect,
         "user_text": context,
-        "temperature": 0.2,
+        "temperature": 0.3, # Temperatura baixa pra manter a lógica firme
         "top_p": 0.9,
     }
-    cache_key = _stable_hash({"mode":"report","system":system_prompt,"context":context})
-    return _cached_generate(cache_key, payload).strip()
+    cache_key_arch = _stable_hash({"mode":"report_arch","system":prompt_architect,"context":context})
+    structured_data = _cached_generate(cache_key_arch, payload_architect).strip()
+
+    # 3. Etapa B: O Formatador pega a lógica e aplica o molde visual
+    payload_formatter = {
+        "mode": "report",
+        "system_prompt": prompt_formatter,
+        "user_text": structured_data, # Agora o input é a saída do Arquiteto, não o chat!
+        "temperature": 0.1, # Quase zero pra não ser criativo com o layout
+        "top_p": 0.9,
+    }
+    cache_key_form = _stable_hash({"mode":"report_form","system":prompt_formatter,"text":structured_data})
+    final_report = _cached_generate(cache_key_form, payload_formatter).strip()
+
+    return final_report
+
 
 def gemini_extract_json(report_text: str, system_prompt: str) -> Dict[str, Any]:
     payload = {

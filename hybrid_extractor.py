@@ -1,4 +1,6 @@
-# hybrid_extractor.py
+# hybrid_extractor.py - Extração híbrida de requisitos
+# Combina regex e IA pra extrair dados do relatório SABiOx.
+
 from __future__ import annotations
 
 import re
@@ -6,19 +8,18 @@ from typing import Dict, List, Any, Optional
 
 
 def extract_section(text: str, section_header: str) -> Optional[str]:
-    """
-    Extrai o conteúdo de uma seção de forma flexível.
-    - Torna o '###' opcional.
-    - Permite que o cabeçalho (ex: Dimension) esteja em qualquer parte da linha do título.
-    - Para a extração ao encontrar o próximo número de seção (ex: 2) ) ou o fim do texto.
-    """
+    """Extrai uma seção específica do texto, tipo 'Purpose' ou 'Domain'."""
+    pattern = rf"(?:###\s*)?\d+\)\s*.*?{re.escape(section_header)}.*?\n(.*?)(?=(?:###\s*)?\d+\)|$)"
+    match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+    return match.group(1).strip() if match else None
     pattern = rf"(?:###\s*)?\d+\)\s*.*?{re.escape(section_header)}.*?\n(.*?)(?=(?:###\s*)?\d+\)|$)"
     match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
     return match.group(1).strip() if match else None
 
 
 def parse_bullet_list(text: str) -> List[str]:
-    """Extrai itens de lista com bullets (- • *). Se for texto corrido, separa por vírgula."""
+    """Extrai itens de lista com bullets, ou separa por vírgula se for corrido."""
+    lines = text.split("\n")
     lines = text.split("\n")
     items: List[str] = []
     
@@ -37,6 +38,7 @@ def parse_bullet_list(text: str) -> List[str]:
 
 
 def extract_requirements_rule_based(report_text: str) -> Dict[str, Any]:
+    """Extrai requisitos do relatório usando regex, sem IA."""
     result = {
         "project": {"name": "", "version": "v.01"},
         "requirements": {
@@ -47,12 +49,12 @@ def extract_requirements_rule_based(report_text: str) -> Dict[str, Any]:
         }
     }
 
-    # 1. Projeto 
+    # Projeto
     name_m = re.search(r"Projeto:\s*([^\n\r]*)", report_text, re.IGNORECASE)
     if name_m: 
         result["project"]["name"] = name_m.group(1).strip()
 
-    # 2. Propósito
+    # Propósito
     purp_text = extract_section(report_text, "Purpose")
     if purp_text:
         w = re.search(r"representar\s+(.*?)(?:,\s*para que|para que)", purp_text, re.I | re.S)
@@ -62,7 +64,7 @@ def extract_requirements_rule_based(report_text: str) -> Dict[str, Any]:
         result["requirements"]["purpose"]["what_for"] = f.group(1).strip() if f else ""
         result["requirements"]["purpose"]["why"] = y.group(1).strip() if y else ""
 
-    # 3. Domínio e Dimensões
+    # Domínio e dimensões
     dom_text = extract_section(report_text, "Domain")
     if dom_text: 
         d_match = re.search(r"Dom[ií]nio:\s*([^\n\r]*)", dom_text, re.IGNORECASE)
@@ -78,7 +80,7 @@ def extract_requirements_rule_based(report_text: str) -> Dict[str, Any]:
         result["requirements"]["domain"]["horizontal"] = h.group(1).strip() if h else ""
         result["requirements"]["domain"]["vertical"] = v.group(1).strip() if v else ""
 
-    # 4. Elicitação e Subdomínios
+    # Elicitação e subdomínios
     elic_text = extract_section(report_text, "Elicitation")
     if elic_text:
         parts = re.split(r"Subdom[ií]nio:\s*", elic_text, flags=re.I)
@@ -91,7 +93,7 @@ def extract_requirements_rule_based(report_text: str) -> Dict[str, Any]:
             if rf_list:
                 result["requirements"]["subdomains"].append({"name": sub_name, "requirements": rf_list})
 
-        # Requisitos Não-Funcionais
+        # Requisitos não funcionais
         rnf_matches = re.finditer(r"(RNF\d+):\s*(.*)", elic_text)
         for m in rnf_matches:
             result["requirements"]["non_functional_requirements"].append({
@@ -102,7 +104,7 @@ def extract_requirements_rule_based(report_text: str) -> Dict[str, Any]:
 
 
 def should_use_ai_fallback(rule_based_result: Dict[str, Any]) -> bool:
-    """Decide se precisa de IA para complementar extração (Versão Ajustada SABiOx)."""
+    """Decide se precisa de IA pra complementar a extração."""
     if not isinstance(rule_based_result, dict):
         return True
 

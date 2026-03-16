@@ -1,4 +1,6 @@
-#local_help.py
+# local_help.py - Ajuda local para o chat
+# Responde perguntas sobre deploy, limites, etc.
+
 HELP_TOPICS = {
     "deploy": (
         "Deploy no Streamlit Community Cloud:\n"
@@ -19,6 +21,7 @@ HELP_TOPICS = {
 }
 
 def answer_help(user_text: str):
+    """Verifica se a pergunta é sobre tópicos de ajuda e responde."""
     t = (user_text or "").lower()
     if any(k in t for k in ["deploy", "streamlit cloud", "community cloud", "publicar", "hospedar"]):
         return HELP_TOPICS["deploy"]

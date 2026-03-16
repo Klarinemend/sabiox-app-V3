@@ -1,3 +1,6 @@
+# ui_chat.py - Interface do chat SABiOx
+# Cuida da conversa com o usuário, geração de relatórios e histórico.
+
 from __future__ import annotations
 import json, os, time
 from datetime import datetime
@@ -6,18 +9,18 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
-from prompts_sabiox import SYSTEM_CHAT
 from router import route
 from local_help import answer_help
-from gemini_client import gemini_chat, maybe_update_summary
-
+from gemini_client import gemini_chat, gemini_report, maybe_update_summary
+from prompts_sabiox import PROMPT_STEP1_INTERVIEWER, PROMPT_STEP2_ARCHITECT, PROMPT_STEP3_FORMATTER
 
 
 def gemma_report(messages: List[Dict[str, str]]) -> str:
+    """Procura o último relatório gerado nas mensagens."""
     for m in reversed(messages):
         if m.get("role") == "assistant":
             texto = m.get("content", "")
-            # Procura por elementos que SEMPRE existem no seu relatório
+            # Procurando elementos que sempre existem no relatório
             tem_identidade = "Projeto:" in texto or "### Especificação" in texto
             tem_proposito = "Purpose (REQ-PURP)" in texto or "1)" in texto
             
@@ -90,7 +93,7 @@ def _render_sidebar() -> None:
             time.sleep(0.1)
             st.rerun()
 
-        if st.button(" Enviar Relatório para Extração", use_container_width=True):
+        if st.button(" Enviar Relatório ", use_container_width=True):
             if not st.session_state.messages:
                 st.warning("A conversa ainda está vazia.")
             else:
@@ -130,7 +133,7 @@ def _render_sidebar() -> None:
                     time.sleep(0.1)
                     st.rerun()     
 
-        # uploader de arquivos JSON
+        # Upload de arquivos JSON
         st.markdown("### Carregar histórico")
         uploaded = st.file_uploader("Faça upload de um arquivo JSON", type="json", key="history_uploader")
         if uploaded:
@@ -154,13 +157,13 @@ def _render_messages_with_delete() -> None:
                 st.rerun()
 
 def render_chat_page(settings: dict) -> None:
+    """Renderiza a página principal do chat."""
     _init_state()
     _render_sidebar()
     
     st.title("Chat – SABiOx")
     st.markdown("""
-    **Bem-vindo ao Sistema SABiOx!**   
-    Vamos criar uma ontologia!? Para começar envie uma mensagem contando um pouco sobre o projeto que você deseja criar. *Qual é o nome dele? Qual é a ideia principal?*
+    **Bem-vindo ao Sistema SABiOx!** Vamos criar uma ontologia!? Para começar envie uma mensagem contando um pouco sobre o projeto que você deseja criar. *Qual é o nome dele? Qual é a ideia principal?*
     <hr style="margin-top: 10px; margin-bottom: 5px; border: none; border-top: 1px solid rgba(128, 128, 128, 0.3);">
     """, unsafe_allow_html=True)
     
@@ -172,26 +175,59 @@ def render_chat_page(settings: dict) -> None:
 
     user_input = st.chat_input("Digite sua mensagem…")
     if user_input:
+        # Adicionando a mensagem do usuário no histórico
         st.session_state.messages.append({"role":"user","content": user_input})
 
+        # Rota de ajuda (igual ao código original)
         mode = route(user_input)
-        
         if mode == "HELP":
             help_text = answer_help(user_input)
             if help_text:
                 st.session_state.messages.append({"role":"assistant","content": help_text})
                 st.rerun()
 
+        # Atualizando o resumo
         st.session_state.summary = maybe_update_summary(
             st.session_state.messages, st.session_state.summary,
             every_n_user_turns=int(settings.get("summary_every_n", 12))
         )
 
-        with st.spinner("Respondendo…"):
-            reply = gemini_chat(
-                st.session_state.messages, 
-                system_prompt=SYSTEM_CHAT, 
-                summary=st.session_state.summary
-            )
+        # Gatilho do relatório: verifica se é hora de acionar os passos 2 e 3
+        # Pega a penúltima mensagem (última da IA antes da resposta do usuário)
+        ultima_msg_ia = ""
+        if len(st.session_state.messages) >= 2:
+            # Percorrendo de trás pra frente pra achar a última da IA
+            for msg in reversed(st.session_state.messages[:-1]):
+                if msg["role"] == "assistant":
+                    ultima_msg_ia = msg["content"].lower()
+                    break
+        
+        # Regra: IA perguntou se podia gerar, usuário autorizou
+        ia_perguntou = "posso gerar o relatório" in ultima_msg_ia
+        usuario_autorizou = any(palavra in user_input.lower() for palavra in ["sim", "pode", "gere", "claro", "por favor"])
+
+        # Executando o pipeline
+        if ia_perguntou and usuario_autorizou:
+            # Rota do relatório (passos 2 e 3)
+            with st.spinner("Estruturando e formatando o relatório SABiOx... Isso pode levar alguns segundos."):
+                reply = gemini_report(
+                    messages=st.session_state.messages,
+                    prompt_architect=PROMPT_STEP2_ARCHITECT,
+                    prompt_formatter=PROMPT_STEP3_FORMATTER,
+                    summary=st.session_state.summary
+                )
+                # Salvando a saída pra ui_extract.py conseguir ler depois
+                st.session_state.last_report = reply
+
+        else:
+            # Rota do chat normal (passo 1: o entrevistador)
+            with st.spinner("Respondendo…"):
+                reply = gemini_chat(
+                    st.session_state.messages, 
+                    system_prompt=PROMPT_STEP1_INTERVIEWER, # Usando o novo prompt de entrevista
+                    summary=st.session_state.summary
+                )
+
+        # Salvando a resposta da IA no histórico e recarregando
         st.session_state.messages.append({"role":"assistant","content": reply})
         st.rerun()
