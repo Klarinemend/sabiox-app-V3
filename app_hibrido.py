@@ -4,6 +4,7 @@ import streamlit as st
 from settings import load_settings
 from ui_chat import render_chat_page
 from ui_extract import render_extract_page
+from Generator.ui_agorf import render_agofrs_page
 
 def _merge_settings(base: dict) -> dict:
     overrides = st.session_state.get("ui_settings_overrides", {})
@@ -54,7 +55,7 @@ def _settings_popover(settings: dict) -> dict:
 
         summary_every_n = st.slider("Resumo a cada N turnos", 3, 12, int(cur.get("summary_every_n", settings["summary_every_n"])))
         summary_max_chars = st.slider("Resumo máx chars", 600, 5000, int(cur.get("summary_max_chars", settings["summary_max_chars"])), 100)
-
+        
         max_output_chat = st.slider("Max output CHAT", 128, 2048, int(cur.get("max_output_chat", settings["max_output_chat"])), 32)
         max_output_report = st.slider("Max output REPORT", 256, 4096, int(cur.get("max_output_report", settings["max_output_report"])), 64)
         max_output_extract = st.slider("Max output EXTRACT", 256, 4096, int(cur.get("max_output_extract", settings["max_output_extract"])), 64)
@@ -90,12 +91,13 @@ def main():
     with col2:
         settings = _settings_popover(settings)
 
-    page = st.sidebar.radio("Navegação", ["Chat Livre", "Extração (REQ)"], index=0)
-    if page == "Chat Livre":
+    page = st.sidebar.radio("Navegação", ["Chat", "Extração(REQ)", "Gerador Extra de RFs (REQ)"])
+    if page == "Chat":
         render_chat_page(settings)
-    else:
+    elif page == "Extração(REQ)":
         render_extract_page(settings)
-
+    elif page == "Gerador Extra de RFs (REQ)":     
+        render_agofrs_page(settings)  
 
 if __name__ == "__main__":
     main()

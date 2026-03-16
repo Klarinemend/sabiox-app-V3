@@ -1,23 +1,21 @@
+# ui_extract.py - Interface de extração de requisitos
+# Permite extrair JSON do relatório e editar manualmente.
+
 import json
 import streamlit as st
 
 from prompts_sabiox import SYSTEM_EXTRACT_JSON
 from gemini_client import gemini_extract_json
 from sabiox_schema import sanitize_requirements, validate_requirements
-from utils_map import map_fr_to_cq
 from hybrid_extractor import extract_requirements_rule_based, should_use_ai_fallback
 
-# --------------------------------------------------
 # Estado
-# --------------------------------------------------
 def _init_state():
     st.session_state.setdefault("last_report", "")
     st.session_state.setdefault("last_json", None)
 
 
-# --------------------------------------------------
-# IA – refinamento
-# --------------------------------------------------
+# IA pra refinar
 SYSTEM_REFINE_JSON = """
 Você é um assistente de engenharia de requisitos.
 Você receberá:
@@ -41,9 +39,7 @@ def gemini_refine_json(report_text: str, base_json: dict) -> dict:
     return gemini_extract_json(payload, system_prompt=SYSTEM_REFINE_JSON)
 
 
-# --------------------------------------------------
-# UI principal
-# --------------------------------------------------
+# Interface principal
 def render_extract_page(settings: dict):
     _init_state()
     st.title("Extração de Requisitos – SABiOx")
@@ -53,7 +49,7 @@ def render_extract_page(settings: dict):
         st.stop()
 
 
-    # Relatório: sempre parte do último relatório do chat
+    # Relatório: sempre pega o último do chat
     report_text = st.text_area(
         "Relatório",
         height=320,
@@ -81,9 +77,7 @@ def render_extract_page(settings: dict):
         st.session_state.last_report = ""
         st.rerun()
 
-    # --------------------------------------------------
     # Extração
-    # --------------------------------------------------
     if do_extract:
         if not report_text.strip():
             st.error("Cole ou gere um relatório antes de extrair.")
@@ -93,7 +87,7 @@ def render_extract_page(settings: dict):
             rules = extract_requirements_rule_based(report_text)
             data = sanitize_requirements(rules)
 
-            # Se o Regex falhar em capturar o essencial, usa a cota da IA para consertar
+            # Se o regex falhar, usa IA pra consertar
             if should_use_ai_fallback(data):
                 raw = gemini_extract_json(report_text, system_prompt=SYSTEM_EXTRACT_JSON)
             else:
@@ -111,9 +105,7 @@ def render_extract_page(settings: dict):
             st.warning("JSON extraído com avisos.")
             st.write(errors)
 
-    # --------------------------------------------------
-    # Editor JSON
-    # --------------------------------------------------
+    # Editor do JSON
     if st.session_state.last_report or st.session_state.last_json is not None:
         st.subheader("JSON")
 
