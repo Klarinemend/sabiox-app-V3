@@ -99,7 +99,7 @@ Analise o texto do domínio abaixo e produza um dicionário consensual que resol
   "conflitos": [{{"termo": "nome do termo", "resolucao": "como usar"}}]
 }}"""
 
-    generative_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemma-3-27b-it"]
+    generative_models = ["gemma-3-27b-it", "gemini-2.5-flash", "gemini-2.0-flash" ]
     for model_name in generative_models:
         for trying, api_key in enumerate(api_keys):
             try:
@@ -298,7 +298,7 @@ def extrair_proposicoes_com_ia(celulas, api_keys, analise=None):
         ),
     }
 
-    generative_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    generative_models = ["gemma-3-27b-it", "gemini-2.0-flash", "gemini-2.5-flash"]
     todas_proposicoes = []
     seen_props = set()
 
@@ -568,7 +568,7 @@ Filtre as tríades abaixo aprovando apenas as ontologicamente válidas e úteis.
 Retorne SOMENTE JSON válido, sem markdown:
 {{"aprovados": [lista de índices inteiros], "rejeitados": {{"indice": "razão resumida"}}}}"""
 
-    generative_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    generative_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemma-3-27b-it"]
     for model_name in generative_models:
         for trying, api_key in enumerate(api_keys):
             try:
@@ -652,14 +652,17 @@ def filter_rfs_by_semantics(texto_base, lista_rfs, api_keys, limiar=0.72, limiar
                 vetor_base = response_base.embeddings[0].values
 
                 vetores_rfs = []
-                for i in range(0, len(lista_rfs), 50):
-                    lote = lista_rfs[i:i + 50]
+                # Reduzindo o lote para 20 para não estourar o RPM de 100 tão rápido
+                for i in range(0, len(lista_rfs), 20):
+                    lote = lista_rfs[i:i + 20]
                     response_lote = client.models.embed_content(
                         model=actual_model, contents=lote,
                         config=types.EmbedContentConfig(task_type="SEMANTIC_SIMILARITY")
                     )
                     vetores_rfs.extend([emb.values for emb in response_lote.embeddings])
-                    time.sleep(1.5)
+                    
+                    # Aumentando o tempo de pausa para dar margem à janela de 1 minuto da API
+                    time.sleep(3)
 
                 vectors_approved = []
                 rfs_filtered = []

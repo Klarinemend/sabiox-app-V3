@@ -55,7 +55,7 @@ Agrupe as Requisitos Funcionais abaixo em subdomínios coerentes.
 Retorne SOMENTE JSON válido, sem markdown:
 {{"subdominios": [{{"nome": "Nome do Subdomínio", "indices": [0, 1, 2]}}]}}"""
 
-    generative_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemma-3-27b-it"]
+    generative_models = ["gemma-3-27b-it", "gemma-3-12b-it", "gemini-2.0-flash"]
     for model_name in generative_models:
         for trying, api_key in enumerate(api_keys):
             try:

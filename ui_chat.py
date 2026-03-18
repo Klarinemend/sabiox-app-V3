@@ -16,15 +16,15 @@ from prompts_sabiox import PROMPT_STEP1_INTERVIEWER, PROMPT_STEP2_ARCHITECT, PRO
 
 
 def gemma_report(messages: List[Dict[str, str]]) -> str:
-    """Procura o último relatório gerado nas mensagens."""
+    """Busca o relatório usando marcadores estruturais fixos."""
     for m in reversed(messages):
         if m.get("role") == "assistant":
             texto = m.get("content", "")
-            # Procurando elementos que sempre existem no relatório
-            tem_identidade = "Projeto:" in texto or "### Especificação" in texto
-            tem_proposito = "Purpose (REQ-PURP)" in texto or "1)" in texto
+            # Marcadores que garantem que é o relatório final
+            tem_cabecalho = "### Especificação da Ontologia" in texto
+            tem_secoes = "REQ-PURP" in texto and "REQ-DOMN" in texto
             
-            if tem_identidade and tem_proposito:
+            if tem_cabecalho and tem_secoes:
                 return texto
     return ""
 
@@ -163,7 +163,7 @@ def render_chat_page(settings: dict) -> None:
     
     st.title("Chat – SABiOx")
     st.markdown("""
-    **Bem-vindo ao Sistema SABiOx!** Vamos criar uma ontologia!? Para começar envie uma mensagem contando um pouco sobre o projeto que você deseja criar. *Qual é o nome dele? Qual é a ideia principal?*
+    **Bem-vindo ao Sistema SABiOx!** Vamos criar uma ontologia!? Para começar envie uma mensagem *detalhada* contando um pouco sobre o projeto que você deseja criar. *Qual é o nome dele? Qual é a ideia principal?*
     <hr style="margin-top: 10px; margin-bottom: 5px; border: none; border-top: 1px solid rgba(128, 128, 128, 0.3);">
     """, unsafe_allow_html=True)
     
@@ -189,7 +189,7 @@ def render_chat_page(settings: dict) -> None:
         # Atualizando o resumo
         st.session_state.summary = maybe_update_summary(
             st.session_state.messages, st.session_state.summary,
-            every_n_user_turns=int(settings.get("summary_every_n", 12))
+            every_n_user_turns=int(settings.get("summary_every_n", 6))
         )
 
         # Gatilho do relatório: verifica se é hora de acionar os passos 2 e 3
@@ -204,7 +204,8 @@ def render_chat_page(settings: dict) -> None:
         
         # Regra: IA perguntou se podia gerar, usuário autorizou
         ia_perguntou = "posso gerar o relatório" in ultima_msg_ia
-        usuario_autorizou = any(palavra in user_input.lower() for palavra in ["sim", "pode", "gere", "claro", "por favor"])
+        termos_aceite = ["sim", "pode", "gere", "claro", "por favor", "ok", "manda", "bora"]
+        usuario_autorizou = any(p in user_input.lower() for p in termos_aceite)
 
         # Executando o pipeline
         if ia_perguntou and usuario_autorizou:
@@ -214,7 +215,8 @@ def render_chat_page(settings: dict) -> None:
                     messages=st.session_state.messages,
                     prompt_architect=PROMPT_STEP2_ARCHITECT,
                     prompt_formatter=PROMPT_STEP3_FORMATTER,
-                    summary=st.session_state.summary
+                    summary=st.session_state.summary,
+                    keep_last=int(settings.get("history_window", 24))
                 )
                 # Salvando a saída pra ui_extract.py conseguir ler depois
                 st.session_state.last_report = reply
@@ -225,7 +227,8 @@ def render_chat_page(settings: dict) -> None:
                 reply = gemini_chat(
                     st.session_state.messages, 
                     system_prompt=PROMPT_STEP1_INTERVIEWER, # Usando o novo prompt de entrevista
-                    summary=st.session_state.summary
+                    summary=st.session_state.summary,
+                    keep_last=int(settings.get("history_window", 8))
                 )
 
         # Salvando a resposta da IA no histórico e recarregando

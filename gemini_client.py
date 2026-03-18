@@ -278,6 +278,7 @@ def maybe_update_summary(messages: List[Dict[str, str]],
     if user_turns == 0:
         return summary
 
+
     text_len = sum(len((m.get("content") or "")) for m in messages)
     should = (user_turns % every_n_user_turns == 0) or (text_len >= max_chars_trigger)
 
@@ -289,14 +290,15 @@ def maybe_update_summary(messages: List[Dict[str, str]],
         models = get_models("chat") or ["gemini-1.5-flash"]
 
     # 1. Primeiro, prepara o texto (Resumo anterior + as últimas 50 mensagens)
-    context_to_summarize = compact_history(messages, summary=summary, keep_last=50) 
-
+    context_to_summarize = compact_history(messages, summary=summary, keep_last=50)
     # Atualize o resumo da conversa em até 12 bullets curtos.
     prompt = (
-        "Atualize o resumo da conversa abaixo em no máximo 12 bullets curtos. "
-        "Preserve decisões de negócio e fatos técnicos. "
-        "Mantenha a estrutura SABiOx (Purpose, Domain, etc.) e não invente dados.\n\n"
-        + context_to_summarize
+        "Atualize o resumo da conversa seguindo estas diretrizes:\n"
+        "1. Preserve decisões de negócio (Nome, Objetivo, Atores).\n"
+        "2. Identifique a 'FASE ATUAL' do roteiro SABiOx (ex: Fase 5 - Conexões).\n"
+        "3. Liste o que já foi validado e o que ainda falta coletar.\n"
+        "4. No máximo 12 bullets curtos. Mantenha a estrutura SABiOx.\n\n"
+        "HISTÓRICO:\n" + context_to_summarize
     )
     
     payload = {
@@ -332,6 +334,7 @@ def gemini_report(messages: List[Dict[str, str]],
                   prompt_formatter: str,
                   summary: str = "",
                   keep_last: int = 14) -> str:
+    
     """Gera relatório SABiOx em 2 etapas: arquiteto e formatador."""
     # 1. Recupera o histórico da conversa limpo
     context = compact_history(messages, summary=summary, keep_last=keep_last)
